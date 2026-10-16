@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dota 2 Audio Cue Quiz</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&family=Marcellus+SC&display=swap">
+<style>
+/* Layout: sticky top bar (title + Quiz / Heroes / Items tabs). Quiz is one narrow play column; the two database tabs are wide lists of rows with icon + mini player cells. */
+:root {
+  --bg: #10151c;
+  --panel: #18202a;
+  --panel-hi: #202a36;
+  --line: #2c3846;
+  --fg: #e7e1d4;
+  --muted: #8e98a5;
+  --brass: #c9a45c;
+  --brass-hi: #ecc97f;
+  --radiant: #7fc46c;
+  --dire: #de5a42;
+  --display: "Marcellus SC", "Palatino Linotype", Georgia, serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --num: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: radial-gradient(120% 70% at 50% 0%, #1a2330 0%, var(--bg) 60%) fixed, var(--bg);
+  color: var(--fg);
+  font: 16px/1.5 var(--body);
+  margin: 0;
+  padding-inline: 16px;
+  padding-block: 0;
+  min-height: 100vh;
+}
+button { font: 600 .82rem/1 var(--num); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; border-radius: 3px; color: var(--fg); }
+button:focus-visible, input:focus-visible, .tab:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
+
+/* Top bar */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; margin-inline: -16px; padding: 14px 16px 0; background: rgba(16,21,28,.94); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+.top-in { max-width: 1040px; margin: 0 auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px 20px; flex-wrap: wrap; }
+.brand { display: flex; flex-direction: column; gap: 2px; padding-bottom: 10px; min-width: 0; }
+h1 { font: 400 clamp(1.35rem, 4.5vw, 1.9rem)/1.1 var(--display); letter-spacing: .04em; margin: 0; color: var(--brass-hi); }
+.meta { font: 500 .74rem/1.4 var(--num); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.tabs { display: flex; gap: 2px; }
+.tab { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 12px 16px 12px; font-size: .9rem; color: var(--muted); }
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { color: var(--brass-hi); border-bottom-color: var(--brass); }
+.loadbar { height: 2px; background: transparent; margin: 0 -16px; }
+.loadbar i { display: block; height: 100%; width: 0; background: var(--brass); transition: width .2s, opacity .6s; }
+
+/* Quiz */
+.quiz { max-width: 560px; margin: 0 auto; padding-block: 26px 40px; display: flex; flex-direction: column; gap: 22px; position: relative; }
+.stage { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.socket-wrap { position: relative; width: min(240px, 62vw); aspect-ratio: 1; max-width: 100%; }
+#wave { position: absolute; inset: 0; width: 100%; height: 100%; }
+.socket {
+  position: absolute; inset: 18%; border: 2px solid var(--brass); background: #0b0f14;
+  box-shadow: inset 0 0 0 4px #0b0f14, inset 0 0 0 5px var(--line), 0 10px 30px rgba(0,0,0,.45);
+  display: grid; place-items: center; overflow: hidden; padding: 0; transition: border-color .25s;
+}
+.socket img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.socket .q { font: 400 3.4rem/1 var(--display); color: var(--brass); }
+.socket.right { border-color: var(--radiant); }
+.socket.wrong { border-color: var(--dire); }
+.socket .fallback { font: 600 .85rem/1.2 var(--num); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 8px; text-align: center; }
+.reveal { text-align: center; min-height: 3.6em; display: flex; flex-direction: column; gap: 2px; }
+#ab-name { font: 400 1.5rem/1.2 var(--display); letter-spacing: .03em; }
+#ab-hero { font: 500 .9rem/1.3 var(--num); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.verdict { font: 600 .95rem/1 var(--num); letter-spacing: .1em; text-transform: uppercase; }
+.verdict.ok { color: var(--radiant); }
+.verdict.no { color: var(--dire); }
+
+.answer { position: relative; display: flex; flex-direction: column; gap: 10px; }
+#guess { width: 100%; font: 500 1.1rem/1.2 var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 13px 14px; }
+#guess::placeholder { color: var(--muted); }
+#guess:focus { outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px rgba(201,164,92,.18); }
+#guess.shake { animation: shake .35s; border-color: var(--dire); }
+@keyframes shake { 20%,60% { transform: translateX(-6px); } 40%,80% { transform: translateX(6px); } }
+.btn { background: var(--panel); border: 1px solid var(--line); padding: 11px 14px; }
+.btn:hover:not(:disabled) { border-color: var(--brass); color: var(--brass-hi); }
+.btn:disabled { opacity: .4; cursor: default; }
+.primary { background: var(--brass); color: #1a1408; border: 0; padding: 15px 28px; font-size: 1rem; }
+.primary:hover:not(:disabled) { background: var(--brass-hi); }
+.primary:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+#suggest { position: absolute; top: 52px; left: 0; right: 0; z-index: 5; list-style: none; margin: 0; padding: 4px 0; background: var(--panel-hi); border: 1px solid var(--line); border-radius: 3px; box-shadow: 0 14px 30px rgba(0,0,0,.5); max-height: 320px; overflow-y: auto; }
+#suggest li { padding: 9px 14px; cursor: pointer; display: flex; justify-content: space-between; gap: 12px; }
+#suggest li .n { min-width: 0; overflow-wrap: anywhere; }
+#suggest li .h { color: var(--muted); font: 500 .85rem/1.5 var(--num); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+#suggest li[aria-selected="true"], #suggest li:hover { background: #2a3645; }
+#suggest mark { background: none; color: var(--brass-hi); }
+.choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.choice { background: transparent; border: 1px dashed var(--line); padding: 11px 10px; font: 500 .95rem/1.25 var(--body); letter-spacing: 0; text-transform: none; text-align: left; }
+.choice small { display: block; color: var(--muted); font: 500 .75rem/1.3 var(--num); letter-spacing: .08em; text-transform: uppercase; }
+.choice:hover { border-style: solid; border-color: var(--brass); }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.stat { padding: 12px 6px; text-align: center; display: flex; flex-direction: column; gap: 2px; position: relative; }
+.stat + .stat { border-left: 1px solid var(--line); }
+.stat b { font: 600 1.6rem/1 var(--num); font-variant-numeric: tabular-nums; }
+.stat span { font: 500 .7rem/1.2 var(--num); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.pop { position: absolute; left: 50%; top: -6px; transform: translateX(-50%); font: 600 1.1rem/1 var(--num); color: var(--radiant); animation: rise 1.1s ease-out forwards; pointer-events: none; }
+@keyframes rise { to { transform: translate(-50%, -34px); opacity: 0; } }
+.next-hint { text-align: center; color: var(--muted); font-size: .85rem; margin: 0; min-height: 1.3em; }
+.vol { display: flex; align-items: center; gap: 10px; justify-content: center; color: var(--muted); font: 500 .75rem/1 var(--num); letter-spacing: .14em; text-transform: uppercase; }
+.vol input { accent-color: var(--brass); width: 140px; }
+
+.overlay { display: flex; flex-direction: column; align-items: center; padding-block: 18px 8px; gap: 18px; text-align: center; }
+/* while the start or end screen is up, it replaces the play area */
+.quiz:has(> .overlay:not([hidden])) > :not(.overlay) { display: none; }
+.overlay h2 { font: 400 1.8rem/1.15 var(--display); color: var(--brass-hi); margin: 0; text-wrap: balance; }
+.overlay p { margin: 0; color: var(--muted); max-width: 42ch; }
+.rules { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; text-align: left; max-width: 40ch; }
+.rules li { display: grid; grid-template-columns: 74px 1fr; gap: 12px; align-items: baseline; }
+.rules b { font: 600 1rem/1.2 var(--num); color: var(--brass); font-variant-numeric: tabular-nums; text-align: right; }
+.modes { display: flex; flex-direction: column; gap: 8px; width: min(340px, 100%); text-align: left; }
+.modes legend { font: 600 .75rem/1 var(--num); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; padding: 0; }
+.modes fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.check { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
+.check:has(input:checked) { border-color: var(--brass); }
+.check input { accent-color: var(--brass); width: 18px; height: 18px; margin: 0; flex: none; }
+.check span { flex: 1; }
+.check small { font: 500 .85rem/1 var(--num); color: var(--muted); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.result-grid { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; max-width: 420px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.gotyou { display: flex; align-items: center; gap: 12px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--dire); border-radius: 3px; width: min(380px, 100%); text-align: left; }
+.gotyou img, .gotyou .ph { width: 48px; height: 48px; flex: none; object-fit: cover; background: #0b0f14; }
+.gotyou div { min-width: 0; flex: 1; }
+.gotyou small { display: block; color: var(--muted); font: 500 .75rem/1.3 var(--num); letter-spacing: .08em; text-transform: uppercase; }
+
+/* Database tabs */
+.db { max-width: 1040px; margin: 0 auto; padding-block: 22px 48px; display: flex; flex-direction: column; gap: 14px; }
+.db-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+.db-head input { flex: 1 1 260px; min-width: 0; font: 500 1rem/1.2 var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 11px 13px; }
+.db-head input:focus { outline: none; border-color: var(--brass); }
+.count { font: 500 .8rem/1 var(--num); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.list { display: flex; flex-direction: column; }
+.hrow { display: grid; grid-template-columns: 168px 1fr; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); align-items: start; }
+.hero-id { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.hero-id img, .hero-id .ph { width: 100%; max-width: 168px; aspect-ratio: 16 / 9; object-fit: cover; background: #0b0f14; border: 1px solid var(--line); display: block; }
+.hero-id b { font: 400 1.05rem/1.2 var(--display); letter-spacing: .03em; }
+.hero-id small { color: var(--muted); font: 500 .72rem/1.2 var(--num); letter-spacing: .12em; text-transform: uppercase; }
+.cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 8px; min-width: 0; }
+.cell { display: flex; align-items: center; gap: 10px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; min-width: 0; }
+.cell.playing { border-color: var(--brass); }
+.cell img, .cell .ph { width: 48px; height: 48px; flex: none; object-fit: cover; background: #0b0f14; display: block; }
+.cell .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.cell .nm { font: 500 .92rem/1.2 var(--body); overflow-wrap: anywhere; }
+.player { display: flex; align-items: center; gap: 8px; }
+.pbtn { width: 28px; height: 28px; flex: none; border-radius: 50%; border: 1px solid var(--brass); background: transparent; display: grid; place-items: center; padding: 0; }
+.pbtn:hover { background: rgba(201,164,92,.15); }
+.pbtn svg { width: 12px; height: 12px; fill: var(--brass-hi); }
+.track { flex: 1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.track i { display: block; height: 100%; width: 0; background: var(--brass); }
+.dur { font: 500 .78rem/1 var(--num); color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.6em; text-align: right; }
+.group { padding-top: 10px; }
+.group h3 { margin: 0; padding: 14px 0 10px; border-top: 1px solid var(--line); font: 600 .8rem/1 var(--num); letter-spacing: .16em; text-transform: uppercase; color: var(--brass); display: flex; justify-content: space-between; }
+.group h3 span { color: var(--muted); }
+.empty { color: var(--muted); padding: 24px 0; text-align: center; }
+footer { text-align: center; color: var(--muted); font-size: .78rem; padding-block: 0 28px; max-width: 640px; margin: 0 auto; }
+footer a { color: var(--muted); }
+@media (max-width: 560px) {
+  .hrow { grid-template-columns: 1fr; gap: 10px; }
+  .hero-id { flex-direction: row; align-items: center; gap: 12px; }
+  .hero-id img, .hero-id .ph { width: 96px; flex: none; }
+  .cells { grid-template-columns: 1fr; }
+  .stat b { font-size: 1.3rem; }
+  .choices { grid-template-columns: 1fr; }
+  .tab { padding: 10px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="top-in">
+    <div class="brand">
+      <h1>Dota 2 Audio Cue Quiz</h1>
+      <div class="meta" id="meta">Patch 7.41 · loading</div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-quiz" aria-controls="panel-quiz" aria-selected="true" type="button">Quiz</button>
+      <button class="tab" role="tab" id="tab-heroes" aria-controls="panel-heroes" aria-selected="false" type="button">Heroes</button>
+      <button class="tab" role="tab" id="tab-items" aria-controls="panel-items" aria-selected="false" type="button">Items</button>
+    </nav>
+  </div>
+  <div class="loadbar" id="loadbar"><i></i></div>
+</div>
+
+<main>
+  <section class="quiz" id="panel-quiz" role="tabpanel" aria-labelledby="tab-quiz">
+    <div class="stage" aria-label="Current sound">
+      <div class="socket-wrap">
+        <canvas id="wave" width="480" height="480" aria-hidden="true"></canvas>
+        <button class="socket" id="socket" type="button" aria-label="Replay sound"><span class="q">?</span></button>
+      </div>
+      <div class="reveal" aria-live="polite">
+        <div id="ab-name">???</div>
+        <div id="ab-hero">Click the socket to replay</div>
+      </div>
+    </div>
+
+    <div class="answer">
+      <input id="guess" type="text" autocomplete="off" spellcheck="false" placeholder="Type the ability or item" aria-autocomplete="list" aria-controls="suggest" aria-label="Your answer">
+      <ul id="suggest" role="listbox" hidden></ul>
+      <div class="row">
+        <button class="btn" id="hint-btn" type="button">Hint · 4 choices (⅕ points)</button>
+      </div>
+      <div class="choices" id="choices" hidden></div>
+      <p class="next-hint" id="next-hint"></p>
+    </div>
+
+    <div class="stats" aria-label="Score">
+      <div class="stat"><b id="score">0</b><span>Score</span></div>
+      <div class="stat"><b id="streak">0</b><span>Streak</span></div>
+      <div class="stat"><b id="right">0</b><span>Correct</span></div>
+      <div class="stat"><b id="best">0</b><span>Best</span></div>
+    </div>
+    <div class="vol"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="1" step="0.05" value="0.6"></div>
+
+    <div class="overlay" id="start">
+      <h2>Name it by its sound</h2>
+      <p>A sound plays. Type the ability or item it belongs to and pick it from the list.</p>
+      <div class="modes">
+        <fieldset>
+          <legend>What to quiz</legend>
+          <label class="check"><input type="checkbox" id="m-abilities" checked><span>Hero abilities</span><small id="n-abilities">–</small></label>
+          <label class="check"><input type="checkbox" id="m-items" checked><span>Items</span><small id="n-items">–</small></label>
+        </fieldset>
+      </div>
+      <ul class="rules">
+        <li><b>100</b><span>points for a right answer</span></li>
+        <li><b>+20</b><span>more for every answer in your current streak</span></li>
+        <li><b>⅕</b><span>of the points if you use a hint</span></li>
+        <li><b>1</b><span>miss and the run is over</span></li>
+      </ul>
+      <button class="primary" id="start-btn" type="button" disabled>Loading sounds…</button>
+    </div>
+
+    <div class="overlay" id="over" hidden>
+      <h2 id="over-title">Run over</h2>
+      <div class="result-grid">
+        <div class="stat"><b id="r-score">0</b><span>Score</span></div>
+        <div class="stat"><b id="r-right">0</b><span>Correct</span></div>
+        <div class="stat"><b id="r-hints">0</b><span>Hints used</span></div>
+      </div>
+      <p id="r-best"></p>
+      <div class="gotyou" id="gotyou"></div>
+      <button class="primary" id="again-btn" type="button">Play again</button>
+      <button class="btn" id="change-btn" type="button">Change what to quiz</button>
+    </div>
+  </section>
+
+  <section class="db" id="panel-heroes" role="tabpanel" aria-labelledby="tab-heroes" hidden>
+    <div class="db-head">
+      <input id="q-heroes" type="search" placeholder="Filter by hero or ability" aria-label="Filter heroes">
+      <span class="count" id="c-heroes"></span>
+    </div>
+    <div class="list" id="list-heroes"></div>
+  </section>
+
+  <section class="db" id="panel-items" role="tabpanel" aria-labelledby="tab-items" hidden>
+    <div class="db-head">
+      <input id="q-items" type="search" placeholder="Filter items" aria-label="Filter items">
+      <span class="count" id="c-items"></span>
+    </div>
+    <div class="list" id="list-items"></div>
+  </section>
+</main>
+
+<footer>Hero and item lists from patch 7.41 (OpenDota data and Liquipedia). Sounds and icons from <a href="https://liquipedia.net/dota2/Main_Page" target="_blank" rel="noopener">Liquipedia</a>. Dota 2 is a trademark of Valve. Inspired by Chudooder's 2018 quiz.</footer>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const norm = s => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const store = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const PLAY = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z"/></svg>';
+  const STOP = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2h8v8H2z"/></svg>';
+
+  let DATA = null;
+  const packs = { a: [], i: [] };
+  let audioReady, iconsReady;
+  let ctx = null, gain = null, analyser = null;
+  const buffers = new Map(), iconUrls = new Map();
+
+  // ---------- loading ----------
+  async function fetchBytes(url, onBytes) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(url + ' ' + res.status);
+    if (!res.body || !res.body.getReader) { const b = await res.arrayBuffer(); onBytes(b.byteLength); return b; }
+    const reader = res.body.getReader(); const chunks = []; let n = 0;
+    for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); n += value.length; onBytes(value.length); }
+    const out = new Uint8Array(n); let o = 0; for (const c of chunks) { out.set(c, o); o += c.length; }
+    return out.buffer;
+  }
+  async function load() {
+    try {
+      DATA = await (await fetch('data.json')).json();
+    } catch (e) { $('meta').textContent = 'Could not load the ability list. Reload to try again.'; return; }
+    DATA.abilities = DATA.list.filter(x => x.t === 'a');
+    DATA.items = DATA.list.filter(x => x.t === 'i');
+    $('meta').textContent = `Patch ${DATA.patch} · ${DATA.heroes.length} heroes · ${DATA.abilities.length} abilities · ${DATA.items.length} items`;
+    $('n-abilities').textContent = DATA.abilities.length;
+    $('n-items').textContent = DATA.items.length;
+    let got = 0; const total = DATA.bytes || 1;
+    const bar = $('loadbar').firstElementChild;
+    const tick = n => { got += n; bar.style.width = Math.min(100, got / total * 100) + '%'; };
+    iconsReady = Promise.all(DATA.packs.i.map(f => fetchBytes(f, tick))).then(b => { packs.i = b; });
+    audioReady = Promise.all(DATA.packs.a.map(f => fetchBytes(f, tick))).then(b => { packs.a = b; });
+    renderHeroes(); renderItems();
+    iconsReady.then(() => { fillIcons(document); });
+    try {
+      await Promise.all([iconsReady, audioReady]);
+      bar.style.opacity = '0';
+      syncModes();
+    } catch (e) {
+      $('start-btn').textContent = 'Could not load sounds';
+      $('meta').textContent = 'The sound files did not load. Reload the page to try again.';
+    }
+  }
+  const slice = (kind, ref) => packs[kind][ref[0]].slice(ref[1], ref[1] + ref[2]);
+  function iconUrl(ref) {
+    if (!ref || !packs.i.length) return null;
+    const k = ref.join(',');
+    if (!iconUrls.has(k)) iconUrls.set(k, URL.createObjectURL(new Blob([slice('i', ref)], { type: 'image/webp' })));
+    return iconUrls.get(k);
+  }
+  // images rendered before the icon pack arrived carry data-ref; fill them in once it has
+  function imgTag(ref, alt) {
+    if (!ref) return '<span class="ph"></span>';
+    const u = iconUrl(ref);
+    return u ? `<img src="${u}" alt="${esc(alt)}" loading="lazy">` : `<img data-ref="${ref.join(',')}" alt="${esc(alt)}">`;
+  }
+  function fillIcons(root) { root.querySelectorAll('img[data-ref]').forEach(im => { im.src = iconUrl(im.dataset.ref.split(',').map(Number)); im.removeAttribute('data-ref'); }); }
+
+  // ---------- audio ----------
+  function initAudio() {
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    gain = ctx.createGain(); gain.gain.value = +$('vol').value;
+    analyser = ctx.createAnalyser(); analyser.fftSize = 256;
+    gain.connect(analyser); analyser.connect(ctx.destination);
+    draw();
+  }
+  async function bufferFor(x) {
+    await audioReady;
+    if (!buffers.has(x)) buffers.set(x, await ctx.decodeAudioData(slice('a', x.a)));
+    return buffers.get(x);
+  }
+  // one sound at a time across the whole page
+  let current = null; // { src, x, onEnd }
+  function stop() {
+    if (!current) return;
+    const c = current; current = null;
+    try { c.src.onended = null; c.src.stop(); } catch (e) {}
+    c.onEnd && c.onEnd();
+  }
+  async function play(x, hooks = {}) {
+    initAudio();
+    if (ctx.state === 'suspended') await ctx.resume();
+    stop();
+    const token = {}; current = { src: null, x, onEnd: hooks.onEnd, token };
+    const buf = await bufferFor(x);
+    if (!current || current.token !== token) return; // something else started meanwhile
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(gain);
+    current.src = src;
+    src.onended = () => { if (current && current.src === src) { current = null; hooks.onEnd && hooks.onEnd(); } };
+    src.start();
+    hooks.onStart && hooks.onStart(buf.duration, ctx.currentTime);
+  }
+  $('vol').addEventListener('input', e => { if (gain) gain.gain.value = +e.target.value; store.set('acq-vol', e.target.value); });
+  $('vol').value = store.get('acq-vol', '0.6');
+
+  const cv = $('wave'), g = cv.getContext('2d');
+  const freq = new Uint8Array(128);
+  function draw() {
+    requestAnimationFrame(draw);
+    const W = cv.width, c = W / 2;
+    g.clearRect(0, 0, W, W);
+    analyser.getByteFrequencyData(freq);
+    const n = 64, r0 = W * 0.36;
+    g.lineWidth = 4; g.lineCap = 'round';
+    for (let k = 0; k < n; k++) {
+      const v = freq[2 + (k < n / 2 ? k : n - k)] / 255;
+      const a = (k / n) * Math.PI * 2 - Math.PI / 2;
+      const len = 4 + v * W * 0.11;
+      g.strokeStyle = `rgba(201,164,92,${0.25 + v * 0.75})`;
+      g.beginPath();
+      g.moveTo(c + Math.cos(a) * r0, c + Math.sin(a) * r0);
+      g.lineTo(c + Math.cos(a) * (r0 + len), c + Math.sin(a) * (r0 + len));
+      g.stroke();
+    }
+  }
+  // idle ring before any sound has played
+  (function idle() { const W = cv.width, c = W / 2; g.lineWidth = 4; g.lineCap = 'round'; for (let k = 0; k < 64; k++) { const a = k / 64 * Math.PI * 2; g.strokeStyle = 'rgba(201,164,92,.25)'; g.beginPath(); g.moveTo(c + Math.cos(a) * W * .36, c + Math.sin(a) * W * .36); g.lineTo(c + Math.cos(a) * (W * .36 + 4), c + Math.sin(a) * (W * .36 + 4)); g.stroke(); } })();
+
+  // ---------- tabs ----------
+  const tabs = ['quiz', 'heroes', 'items'];
+  function showTab(name, focus) {
+    tabs.forEach(t => { $('tab-' + t).setAttribute('aria-selected', t === name); $('panel-' + t).hidden = t !== name; });
+    if (name !== 'quiz') { stop(); if (state === 'ask' || state === 'reveal') pause(); }
+    if (focus) $('tab-' + name).focus();
+    store.set('acq-tab', name);
+    window.scrollTo(0, 0);
+  }
+  tabs.forEach((t, i) => {
+    $('tab-' + t).onclick = () => showTab(t);
+    $('tab-' + t).onkeydown = e => {
+      if (e.key === 'ArrowRight') showTab(tabs[(i + 1) % 3], true);
+      if (e.key === 'ArrowLeft') showTab(tabs[(i + 2) % 3], true);
+    };
+  });
+
+  // ---------- database ----------
+  function cellHTML(x, idx) {
+    return `<div class="cell" data-k="${idx}">${imgTag(x.i, x.n + ' icon')}<div class="body"><div class="nm">${esc(x.n)}</div>` +
+      `<div class="player"><button class="pbtn" type="button" aria-label="Play ${esc(x.n)}">${PLAY}</button><div class="track"><i></i></div><span class="dur">${x.d ? x.d.toFixed(1) + 's' : ''}</span></div></div></div>`;
+  }
+  function renderHeroes() {
+    const by = new Map(DATA.heroes.map(h => [h.n, []]));
+    DATA.list.forEach((x, k) => { if (x.t === 'a' && by.has(x.h)) by.get(x.h).push(k); });
+    $('list-heroes').innerHTML = DATA.heroes.map(h => {
+      const ks = by.get(h.n);
+      return `<div class="hrow" data-hero="${esc(h.n)}"><div class="hero-id">${imgTag(h.i, h.n)}<div><b>${esc(h.n)}</b><br><small>${ks.length} sound${ks.length === 1 ? '' : 's'}</small></div></div>` +
+        `<div class="cells">${ks.map(k => cellHTML(DATA.list[k], k)).join('')}</div></div>`;
+    }).join('');
+    $('c-heroes').textContent = `${DATA.heroes.length} heroes`;
+  }
+  function renderItems() {
+    const groups = new Map(DATA.groups.map(gname => [gname, []]));
+    DATA.list.forEach((x, k) => { if (x.t === 'i') { if (!groups.has(x.h)) groups.set(x.h, []); groups.get(x.h).push(k); } });
+    $('list-items').innerHTML = [...groups].filter(([, ks]) => ks.length).map(([gname, ks]) =>
+      `<div class="group" data-group="${esc(gname)}"><h3>${esc(gname)} <span>${ks.length}</span></h3><div class="cells">${ks.map(k => cellHTML(DATA.list[k], k)).join('')}</div></div>`).join('');
+    $('c-items').textContent = `${DATA.items.length} items`;
+  }
+  function filterList(listId, q, rowSel, countId, noun) {
+    const t = norm(q); let shown = 0, cells = 0;
+    $(listId).querySelectorAll(rowSel).forEach(row => {
+      const head = norm(row.dataset.hero || '');
+      const all = !t || head.includes(t);
+      let any = false;
+      row.querySelectorAll('.cell').forEach(c => { const hit = all || norm(DATA.list[+c.dataset.k].n).includes(t); c.hidden = !hit; if (hit) { any = true; cells++; } });
+      row.hidden = !any && !(all && head);
+      if (!row.hidden) shown++;
+    });
+    $(countId).textContent = t ? `${noun === 'heroes' ? shown + ' heroes · ' : ''}${cells} sounds match` : `${noun === 'heroes' ? DATA.heroes.length + ' heroes' : DATA.items.length + ' items'}`;
+    let empty = $(listId).querySelector('.empty');
+    if (!shown) { if (!empty) { empty = document.createElement('p'); empty.className = 'empty'; $(listId).appendChild(empty); } empty.textContent = `Nothing matches “${q}”.`; }
+    else if (empty) empty.remove();
+  }
+  $('q-heroes').addEventListener('input', e => filterList('list-heroes', e.target.value, '.hrow', 'c-heroes', 'heroes'));
+  $('q-items').addEventListener('input', e => filterList('list-items', e.target.value, '.group', 'c-items', 'items'));
+
+  let playingCell = null, rafId = 0;
+  function resetCell(cell) { if (!cell) return; cell.classList.remove('playing'); cell.querySelector('.pbtn').innerHTML = PLAY; cell.querySelector('.track i').style.width = '0'; }
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.pbtn'); if (!btn) return;
+    const cell = btn.closest('.cell'); const x = DATA.list[+cell.dataset.k];
+    if (playingCell === cell) { stop(); return; }
+    resetCell(playingCell); playingCell = cell;
+    cell.classList.add('playing'); btn.innerHTML = STOP;
+    play(x, {
+      onStart(dur, t0) {
+        x.d = dur; cell.querySelector('.dur').textContent = dur.toFixed(1) + 's';
+        const fill = cell.querySelector('.track i');
+        cancelAnimationFrame(rafId);
+        const step = () => { if (playingCell !== cell) return; fill.style.width = Math.min(100, (ctx.currentTime - t0) / dur * 100) + '%'; rafId = requestAnimationFrame(step); };
+        step();
+      },
+      onEnd() { if (playingCell === cell) { resetCell(cell); playingCell = null; } }
+    });
+  });
+
+  // ---------- quiz ----------
+  let pool = [], active = [], cur = null, state = 'idle';
+  let score = 0, streak = 0, right = 0, hints = 0, hintUsed = false, nextTimer = null, pending = null;
+  let sel = -1, sugg = [];
+  const modeKey = () => ($('m-abilities').checked ? 'a' : '') + ($('m-items').checked ? 'i' : '');
+  const bestFor = () => +store.get('acq-best-' + modeKey(), 0) || 0;
+  function syncModes() {
+    const k = modeKey();
+    store.set('acq-mode', k);
+    $('best').textContent = bestFor();
+    if (!DATA || !packs.a.length) return;
+    $('start-btn').disabled = !k;
+    $('start-btn').textContent = k ? 'Start' : 'Pick at least one';
+    $('guess').placeholder = k === 'a' ? 'Type the ability name' : k === 'i' ? 'Type the item name' : 'Type the ability or item';
+  }
+  (function restoreMode() { const k = store.get('acq-mode', 'ai'); if (k) { $('m-abilities').checked = k.includes('a'); $('m-items').checked = k.includes('i'); } })();
+  $('m-abilities').onchange = syncModes; $('m-items').onchange = syncModes;
+
+  function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  function setSocket(x, cls) {
+    const s = $('socket'); s.className = 'socket' + (cls ? ' ' + cls : '');
+    if (!x) { s.innerHTML = '<span class="q">?</span>'; return; }
+    const u = iconUrl(x.i);
+    s.innerHTML = u ? `<img src="${u}" alt="${esc(x.n)} icon">` : `<span class="fallback">${esc(x.n)}</span>`;
+  }
+  function renderStats() { $('score').textContent = score; $('streak').textContent = streak; $('right').textContent = right; }
+  function newGame() {
+    const k = modeKey(); if (!k) return;
+    active = DATA.list.filter(x => k.includes(x.t));
+    pool = shuffle(active.slice());
+    score = 0; streak = 0; right = 0; hints = 0;
+    renderStats(); $('best').textContent = bestFor();
+    $('over').hidden = true; $('start').hidden = true;
+    next();
+  }
+  function sub(x) { return x.t === 'a' ? x.h : (x.h.startsWith('Neutral') ? x.h : 'Item · ' + x.h); }
+  function next() {
+    clearTimeout(nextTimer); nextTimer = null; pending = null;
+    if (!pool.length) return gameOver(true);
+    cur = pool.pop(); hintUsed = false; state = 'ask';
+    setSocket(null);
+    $('ab-name').textContent = '???';
+    $('ab-hero').textContent = 'Click the socket to replay';
+    $('choices').hidden = true; $('choices').innerHTML = '';
+    $('hint-btn').disabled = false;
+    $('next-hint').textContent = '';
+    $('guess').value = ''; $('guess').disabled = false; closeSuggest(); $('guess').focus();
+    play(cur);
+  }
+  function pause() { clearTimeout(nextTimer); nextTimer = null; }
+  function schedule(fn, ms) { clearTimeout(nextTimer); pending = fn; nextTimer = setTimeout(() => { nextTimer = null; pending = null; fn(); }, ms); }
+  function answer(x) {
+    if (state !== 'ask') return;
+    state = 'reveal';
+    // entries with the identical sound file share a group id; any of their names counts
+    const ok = !!x && (norm(x.n) === norm(cur.n) || (cur.g !== undefined && x.g === cur.g));
+    if (ok) {
+      let pts = 100 + 20 * streak; if (hintUsed) pts = Math.round(pts / 5);
+      score += pts; streak++; right++;
+      const p = document.createElement('div'); p.className = 'pop'; p.textContent = '+' + pts;
+      $('score').parentElement.appendChild(p); setTimeout(() => p.remove(), 1200);
+      $('ab-hero').innerHTML = esc(sub(cur)) + ` &nbsp;<span class="verdict ok">Correct · +${pts}</span>`;
+    } else {
+      $('ab-hero').innerHTML = esc(sub(cur)) + ` &nbsp;<span class="verdict no">You said ${esc(x.n)}</span>`;
+    }
+    renderStats();
+    setSocket(cur, ok ? 'right' : 'wrong');
+    $('ab-name').textContent = cur.n;
+    $('guess').disabled = true; closeSuggest();
+    $('hint-btn').disabled = true; $('choices').hidden = true;
+    if (ok) {
+      $('next-hint').textContent = pool.length ? 'Next sound in 2 seconds · press Enter to go now' : '';
+      schedule(next, 2000);
+    } else {
+      $('next-hint').textContent = '';
+      schedule(() => gameOver(false, x), 1700);
+    }
+  }
+  function gameOver(cleared, said) {
+    clearTimeout(nextTimer); nextTimer = null; pending = null;
+    state = 'over';
+    $('over-title').textContent = cleared ? 'Every sound, cleared' : 'Run over';
+    $('r-score').textContent = score; $('r-right').textContent = right; $('r-hints').textContent = hints;
+    const best = bestFor();
+    if (score > best) { store.set('acq-best-' + modeKey(), score); $('r-best').textContent = 'New best score.'; }
+    else $('r-best').textContent = 'Best score: ' + best;
+    $('best').textContent = Math.max(best, score);
+    const g2 = $('gotyou');
+    if (cleared) { g2.hidden = true; }
+    else {
+      g2.hidden = false;
+      g2.innerHTML = imgTag(cur.i, '') + `<div>${esc(cur.n)}<small>${esc(sub(cur))}${said ? ' · you said ' + esc(said.n) : ''}</small></div><button class="btn" type="button">Play</button>`;
+      g2.querySelector('button').onclick = () => play(cur);
+    }
+    $('over').hidden = false; $('again-btn').focus();
+  }
+
+  $('hint-btn').onclick = () => {
+    if (state !== 'ask' || hintUsed) return;
+    hintUsed = true; hints++; $('hint-btn').disabled = true;
+    const names = new Set([norm(cur.n)]); const opts = [cur];
+    // never offer a decoy that shares the right answer's sound
+    if (cur.g !== undefined) active.forEach(x => { if (x.g === cur.g) names.add(norm(x.n)); });
+    const same = active.filter(x => x.t === cur.t && x.h === cur.h && !names.has(norm(x.n)));
+    const rest = shuffle(active.filter(x => x.t === cur.t));
+    for (const x of shuffle(same).slice(0, 1).concat(rest)) { if (opts.length >= 4) break; if (!names.has(norm(x.n))) { names.add(norm(x.n)); opts.push(x); } }
+    $('choices').innerHTML = '';
+    shuffle(opts).forEach(x => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'choice';
+      b.innerHTML = `${esc(x.n)}<small>${esc(x.t === 'a' ? x.h : 'Item')}</small>`; b.onclick = () => answer(x);
+      $('choices').appendChild(b);
+    });
+    $('choices').hidden = false;
+  };
+  $('socket').onclick = () => { if (cur && state !== 'idle') play(cur); };
+  $('start-btn').onclick = () => { initAudio(); newGame(); };
+  $('again-btn').onclick = () => newGame();
+  $('change-btn').onclick = () => { $('over').hidden = true; $('start').hidden = false; state = 'idle'; };
+
+  // autocomplete over the sounds in play
+  function search(q) {
+    const toks = q.toLowerCase().split(/\s+/).map(t => t.replace(/[^a-z0-9]/g, '')).filter(Boolean);
+    if (!toks.length) return [];
+    const seen = new Set(), out = [];
+    for (const x of active) {
+      const words = (x.n + ' ' + (x.t === 'a' ? x.h : 'item')).toLowerCase().split(/[\s\-]+/).map(w => w.replace(/[^a-z0-9]/g, ''));
+      if (!toks.every(t => words.some(w => w.startsWith(t)))) continue;
+      const key = x.n + '|' + x.h; if (seen.has(key)) continue; seen.add(key);
+      out.push([norm(x.n).startsWith(norm(q)) ? 0 : 1, x.n.length, x]);
+    }
+    return out.sort((a, b) => a[0] - b[0] || a[1] - b[1]).slice(0, 8).map(r => r[2]);
+  }
+  function hl(text, q) {
+    const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
+    return text.split(' ').map(w => { const t = toks.find(t => w.toLowerCase().startsWith(t)); return t ? `<mark>${esc(w.slice(0, t.length))}</mark>${esc(w.slice(t.length))}` : esc(w); }).join(' ');
+  }
+  function renderSuggest() {
+    const ul = $('suggest');
+    if (!sugg.length) return closeSuggest();
+    const q = $('guess').value;
+    ul.innerHTML = sugg.map((x, i) => `<li role="option" id="opt${i}" aria-selected="${i === sel}" data-i="${i}"><span class="n">${hl(x.n, q)}</span><span class="h">${esc(x.t === 'a' ? x.h : 'Item')}</span></li>`).join('');
+    ul.hidden = false;
+    $('guess').setAttribute('aria-expanded', 'true');
+    if (sel >= 0) { $('guess').setAttribute('aria-activedescendant', 'opt' + sel); ul.children[sel].scrollIntoView({ block: 'nearest' }); }
+  }
+  function closeSuggest() { $('suggest').hidden = true; sugg = []; sel = -1; $('guess').setAttribute('aria-expanded', 'false'); $('guess').removeAttribute('aria-activedescendant'); }
+  $('guess').addEventListener('input', e => { sugg = search(e.target.value); sel = sugg.length ? 0 : -1; renderSuggest(); });
+  $('guess').addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' && sugg.length) { sel = (sel + 1) % sugg.length; renderSuggest(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp' && sugg.length) { sel = (sel - 1 + sugg.length) % sugg.length; renderSuggest(); e.preventDefault(); }
+    else if (e.key === 'Escape') closeSuggest();
+    else if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      if (sel >= 0 && sugg[sel]) return answer(sugg[sel]);
+      const typed = norm(e.target.value); if (!typed) return;
+      const hit = active.find(x => norm(x.n) === typed);
+      if (hit) answer(hit);
+      else { const g2 = e.target; g2.classList.remove('shake'); void g2.offsetWidth; g2.classList.add('shake'); }
+    }
+  });
+  $('suggest').addEventListener('mousedown', e => { const li = e.target.closest('li'); if (li) { e.preventDefault(); answer(sugg[+li.dataset.i]); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Enter' && state === 'reveal' && pending === next && !$('panel-quiz').hidden) { e.preventDefault(); next(); } });
+  document.addEventListener('click', e => { if (!e.target.closest('.answer')) closeSuggest(); });
+  // coming back to the quiz tab mid-run resumes the countdown
+  $('tab-quiz').addEventListener('click', () => { if (state === 'reveal' && pending && !nextTimer) schedule(pending, 1200); });
+
+  const t0 = store.get('acq-tab', 'quiz'); if (tabs.includes(t0)) showTab(t0);
+  load();
+})();
+</script>
+</body>
+</html>
